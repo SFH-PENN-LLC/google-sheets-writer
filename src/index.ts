@@ -23,9 +23,15 @@ async function main(): Promise<void> {
 	const records = JSON.parse(raw) as Record<string, unknown>[];
 
 	if (records.length === 0) {
-		console.log('No records to write; exiting.');
-		return;
-	}
+    await sheets.spreadsheets.values.update({
+      spreadsheetId:  sheetId,
+      range:          `${sheetName}!A1`,
+      valueInputOption: 'RAW',
+      requestBody:     { values: [['there is no data']] }
+    });
+    console.log('No data → wrote message to A1');
+    return;
+  }
 
 	const headers = Object.keys(records[0]);
 
