@@ -1,0 +1,16 @@
+{
+  "name": "google-sheets-writer",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "write": "node --loader ts-node/esm src/index.ts"
+  },
+  "dependencies": {
+    "googleapis": "^131.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "ts-node": "^10.9.2",
+    "@types/node": "^22.15.21"
+  }
+}

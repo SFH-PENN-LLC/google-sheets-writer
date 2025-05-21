@@ -1,0 +1,8 @@
+{
+  "date": ["date","date_start","day"],
+  "account_id": "account_id",
+  "campaign_name": ["campaign_name","campaign"],
+  "impressions": ["impressions","impr"],
+  "clicks": "clicks",
+  "spend": ["spend","cost"]
+}
