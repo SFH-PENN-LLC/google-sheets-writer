@@ -2,7 +2,7 @@ import { retryOperation } from './retry.js';
 
 /**
  * Сервис для CRUD операций с Google Sheets
- * Отвечает только за работу с листами, не знает про бизнес-логику
+ * ИСПРАВЛЕНО: правильное использование valueInputOption для дат
  */
 
 export interface SheetRange {
@@ -60,7 +60,9 @@ export class SheetService {
 			// Читаем все данные в пределах реальных размеров листа
 			const dataResponse = await this.sheets.spreadsheets.values.get({
 				spreadsheetId: this.sheetId,
-				range: `${this.sheetName}!A1:${lastColumn}${actualRowCount}`
+				range: `${this.sheetName}!A1:${lastColumn}${actualRowCount}`,
+				// ИСПРАВЛЕНО: используем FORMATTED_VALUE для получения отформатированных дат
+				valueRenderOption: 'FORMATTED_VALUE'
 			});
 
 			return dataResponse.data.values || [];
@@ -140,8 +142,9 @@ export class SheetService {
 
 	/**
 	 * Добавляет новые строки в конец листа
+	 * ИСПРАВЛЕНО: использует USER_ENTERED по умолчанию для правильного форматирования дат
 	 */
-	async appendRows(data: any[][], valueInputOption: 'RAW' | 'USER_ENTERED' = 'RAW'): Promise<void> {
+	async appendRows(data: any[][], valueInputOption: 'RAW' | 'USER_ENTERED' = 'USER_ENTERED'): Promise<void> {
 		await retryOperation(async () => {
 			await this.sheets.spreadsheets.values.append({
 				spreadsheetId: this.sheetId,
@@ -155,6 +158,7 @@ export class SheetService {
 
 	/**
 	 * Полная перезапись листа
+	 * ИСПРАВЛЕНО: использует USER_ENTERED для правильного форматирования дат
 	 */
 	async replaceAllData(data: any[][], columnCount: number): Promise<void> {
 		const columnRange = `A:${this.numberToColumnLetter(columnCount)}`;
@@ -166,11 +170,11 @@ export class SheetService {
 				range: `${this.sheetName}!${columnRange}`
 			});
 
-			// Записываем новые данные
+			// Записываем новые данные с USER_ENTERED для автоматического форматирования
 			await this.sheets.spreadsheets.values.update({
 				spreadsheetId: this.sheetId,
 				range: `${this.sheetName}!A1`,
-				valueInputOption: 'RAW',
+				valueInputOption: 'USER_ENTERED', // ИСПРАВЛЕНО: было 'RAW'
 				requestBody: { values: data }
 			});
 		});
@@ -188,7 +192,7 @@ export class SheetService {
 			await this.sheets.spreadsheets.values.update({
 				spreadsheetId: this.sheetId,
 				range: `${this.sheetName}!${startColumnLetter}1`,
-				valueInputOption: 'RAW',
+				valueInputOption: 'RAW', // Заголовки всегда как RAW
 				requestBody: { values: [newColumns] }
 			});
 		});

@@ -5,13 +5,7 @@ import { RecordMapper } from '../sheets/mapper.js';
 
 /**
  * Идеальный Google Sheets writer
- * - Модульная архитектура
- * - Реальное удаление строк (deleteDimension)
- * - Динамические диапазоны колонок
- * - Безопасные групповые операции
- * - Поддержка dry-run режима
- * - Защита от параллельных запусков
- * - Настраиваемые поля дат
+ * ИСПРАВЛЕНО: правильная обработка дат и valueInputOption
  */
 
 interface WriteStats {
@@ -159,6 +153,7 @@ export class GoogleSheetsWriter {
 
 	/**
 	 * Полное обновление - очистка и запись всех данных
+	 * ИСПРАВЛЕНО: используем USER_ENTERED для правильного форматирования дат
 	 */
 	private async performFullRefresh(newRecords: Record<string, any>[]): Promise<WriteStats> {
 		console.log('🔄 Performing full refresh');
@@ -192,6 +187,7 @@ export class GoogleSheetsWriter {
 
 	/**
 	 * Инкрементальное обновление с реальным удалением строк
+	 * ИСПРАВЛЕНО: используем USER_ENTERED для правильного форматирования дат
 	 */
 	private async performIncrementalUpdate(newRecords: Record<string, any>[]): Promise<WriteStats> {
 		console.log('➕ Performing incremental update with row deletion');
@@ -263,9 +259,10 @@ export class GoogleSheetsWriter {
 
 			if (!this.dryRun) {
 				const dataRows = this.mapper.recordsToRows(newRecords, finalColumns);
-				await this.sheetService.appendRows(dataRows, 'USER_ENTERED'); // Единый формат
+				// ИСПРАВЛЕНО: USER_ENTERED для автоматического форматирования строк-дат
+				await this.sheetService.appendRows(dataRows, 'USER_ENTERED');
 
-				// Форматируем колонки с датами
+				// Форматируем колонки с датами (дополнительная страховка)
 				const dateColumnIndices = this.mapper.findDateColumnIndices(finalColumns);
 				if (dateColumnIndices.length > 0) {
 					await this.sheetService.formatDateColumns(dateColumnIndices);

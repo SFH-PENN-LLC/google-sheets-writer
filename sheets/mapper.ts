@@ -1,6 +1,7 @@
 /**
  * Маппер для преобразования JSON данных в строки Google Sheets
  * Обрабатывает типы данных, даты, вложенные объекты
+ * ИСПРАВЛЕНО: правильная обработка дат для Google Sheets
  */
 
 export interface ProcessedRecord {
@@ -62,16 +63,17 @@ export class RecordMapper {
 
 	/**
 	 * Обрабатывает значение поля с учетом его типа
+	 * ИСПРАВЛЕНО: возвращает чистые строки YYYY-MM-DD для дат
 	 */
 	private processFieldValue(value: any, columnName: string): any {
 		if (value == null || value === '') {
 			return '';
 		}
 
-		// Специальная обработка дат - всегда в формате YYYY-MM-DD
+		// Специальная обработка дат - возвращаем строку YYYY-MM-DD
 		if (this.isDateField(columnName)) {
-			const normalizedDate = this.normalizeDate(String(value));
-			return normalizedDate || String(value);
+			const normalized = this.normalizeDate(String(value));
+			return normalized || String(value); // Если нормализация не удалась, возвращаем исходное значение
 		}
 
 		// Обработка вложенных объектов и массивов
@@ -100,20 +102,39 @@ export class RecordMapper {
 		return this.dateFields.includes(columnName.toLowerCase());
 	}
 
+
+
 	/**
 	 * Нормализует дату в формат YYYY-MM-DD
+	 * УЛУЧШЕНО: более точная обработка различных форматов дат
 	 */
 	normalizeDate(dateString: string): string {
 		if (!dateString) return '';
 
 		try {
-			const date = new Date(dateString);
+			// Убираем лишние пробелы
+			const cleaned = dateString.trim();
+
+			// Если уже в формате YYYY-MM-DD, проверяем валидность
+			if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
+				const date = new Date(cleaned + 'T00:00:00.000Z');
+				if (!isNaN(date.getTime())) {
+					return cleaned;
+				}
+			}
+
+			// Парсим различные форматы
+			const date = new Date(cleaned);
 			if (isNaN(date.getTime())) {
 				return '';
 			}
 
-			// Форматируем в YYYY-MM-DD
-			return date.toISOString().split('T')[0];
+			// Форматируем в YYYY-MM-DD без UTC сдвигов
+			const year = date.getFullYear();
+			const month = String(date.getMonth() + 1).padStart(2, '0');
+			const day = String(date.getDate()).padStart(2, '0');
+
+			return `${year}-${month}-${day}`;
 		} catch {
 			return '';
 		}
@@ -176,7 +197,14 @@ export class RecordMapper {
 			const record: Record<string, any> = {};
 
 			headers.forEach((header, index) => {
-				record[header] = row[index] || '';
+				let cellValue = row[index] || '';
+
+				// ИСПРАВЛЕНО: удаляем апострофы из дат при чтении
+				if (typeof cellValue === 'string' && cellValue.startsWith("'")) {
+					cellValue = cellValue.substring(1);
+				}
+
+				record[header] = cellValue;
 			});
 
 			records.push({
