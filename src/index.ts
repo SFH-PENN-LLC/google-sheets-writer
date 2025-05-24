@@ -65,20 +65,24 @@ export class GoogleSheetsWriter {
 			const newRecords = await this.loadData(dataPath);
 
 			if (newRecords.length === 0) {
-				console.log('⚠️  No data found');
-
-				if (!this.dryRun) {
-					await this.sheetService.writeMessage('No data available');
-				}
-
-				return {
-					totalRecords: 0,
-					newRecords: 0,
-					updatedRecords: 0,
-					deletedRecords: 0,
-					newColumns: []
-				};
+				throw new Error('❌ No data to write');
 			}
+
+			// if (newRecords.length === 0) {
+			// 	console.log('⚠️  No data found');
+			//
+			// 	if (!this.dryRun) {
+			// 		await this.sheetService.writeMessage('No data available');
+			// 	}
+			//
+			// 	return {
+			// 		totalRecords: 0,
+			// 		newRecords: 0,
+			// 		updatedRecords: 0,
+			// 		deletedRecords: 0,
+			// 		newColumns: []
+			// 	};
+			// }
 
 			console.log(`📥 Loaded ${newRecords.length} new records`);
 
