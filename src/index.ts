@@ -64,9 +64,9 @@ export class GoogleSheetsWriter {
 		try {
 			const newRecords = await this.loadData(dataPath);
 
-			if (newRecords.length === 0) {
-				throw new Error('❌ No data to write');
-			}
+			// if (newRecords.length === 0) {
+			// 	throw new Error('❌ No data to write');
+			// }
 
 			// if (newRecords.length === 0) {
 			// 	console.log('⚠️  No data found');
