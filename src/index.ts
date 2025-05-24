@@ -192,6 +192,7 @@ export class GoogleSheetsWriter {
 	/**
 	 * Инкрементальное обновление с реальным удалением строк
 	 * ИСПРАВЛЕНО: используем USER_ENTERED для правильного форматирования дат
+	 * Правильная логика удаления и добавления данных
 	 */
 	private async performIncrementalUpdate(newRecords: Record<string, any>[]): Promise<WriteStats> {
 		console.log('➕ Performing incremental update with row deletion');
@@ -209,24 +210,25 @@ export class GoogleSheetsWriter {
 
 		console.log(`📚 Loaded ${existingRecords.length} existing records with ${existingHeaders.length} columns`);
 
-		// Определяем даты для удаления
+		// Определяем даты для обновления
 		const datesToUpdate = this.mapper.extractDatesFromRecords(newRecords);
 		console.log(`📅 Dates to update: ${datesToUpdate.join(', ')}`);
 
-		// Находим строки для удаления
-		const rowsToDelete = this.findRowsToDelete(existingRecords, datesToUpdate);
+		// **ИСПРАВЛЕНИЕ 1: Фильтруем записи вместо удаления строк**
+		let filteredRecords = existingRecords;
 		let deletedCount = 0;
 
-		if (rowsToDelete.length > 0) {
-			console.log(`🗑️  Will delete ${rowsToDelete.length} rows for dates: ${datesToUpdate.join(', ')}`);
+		if (datesToUpdate.length > 0) {
+			const recordsToKeep = existingRecords.filter(record => {
+				const rawDate = this.mapper.getRecordDate(record.data);
+				const normalizedDate = this.mapper.normalizeDate(rawDate);
+				return !datesToUpdate.includes(normalizedDate);
+			});
 
-			if (!this.dryRun) {
-				// РЕАЛЬНО удаляем строки (deleteDimension)
-				const ranges = this.mapper.groupConsecutiveRanges(rowsToDelete);
-				await this.sheetService.deleteRows(ranges);
-			}
+			deletedCount = existingRecords.length - recordsToKeep.length;
+			filteredRecords = recordsToKeep;
 
-			deletedCount = rowsToDelete.length;
+			console.log(`🗑️  Will remove ${deletedCount} records for dates: ${datesToUpdate.join(', ')}`);
 		}
 
 		// Определяем новые колонки
@@ -234,50 +236,34 @@ export class GoogleSheetsWriter {
 		const finalColumns = this.mapper.mergeColumns(existingHeaders, newFields);
 		const newColumns = finalColumns.filter((col: string) => !existingHeaders.includes(col));
 
-		// Добавляем новые колонки если нужно
-		if (newColumns.length > 0) {
-			console.log(`➕ Adding new columns: ${newColumns.join(', ')}`);
-
-			if (!this.dryRun) {
-				await this.sheetService.addColumns(newColumns, existingHeaders.length);
-			}
-		}
-
-		// Проверяем достаточно ли строк в таблице
-		const currentDataRows = existingRecords.length - deletedCount;
-		const requiredRows = currentDataRows + newRecords.length + 1; // +1 для заголовка
-
+		// **ИСПРАВЛЕНИЕ 2: Перезаписываем весь лист с отфильтрованными + новыми данными**
 		if (!this.dryRun) {
-			const availableRows = await this.sheetService.getAvailableRows();
-			console.log(`📏 Current data rows: ${currentDataRows}, Available rows: ${availableRows}, Required: ${requiredRows}`);
+			// Объединяем отфильтрованные записи с новыми
+			const allRecordsData = [
+				...filteredRecords.map(r => r.data),
+				...newRecords
+			];
 
-			if (requiredRows > availableRows || availableRows === 0) {
-				console.log(`📈 Need more rows. Adding 5000 rows to sheet...`);
-				await this.sheetService.addRowsToSheet(5000);
-			}
-		}
+			console.log(`📝 Writing ${allRecordsData.length} total records (${filteredRecords.length} existing + ${newRecords.length} new)`);
 
-		// Добавляем новые данные
-		if (newRecords.length > 0) {
-			console.log(`📝 ${this.dryRun ? 'Would append' : 'Appending'} ${newRecords.length} new records`);
+			// Подготавливаем данные для записи
+			const dataRows = this.mapper.recordsToRows(allRecordsData, finalColumns);
+			const allData = [finalColumns, ...dataRows];
 
-			if (!this.dryRun) {
-				const dataRows = this.mapper.recordsToRows(newRecords, finalColumns);
-				// ИСПРАВЛЕНО: USER_ENTERED для автоматического форматирования строк-дат
-				await this.sheetService.appendRows(dataRows, 'USER_ENTERED');
+			// Полная перезапись листа
+			await this.sheetService.replaceAllData(allData, finalColumns.length);
 
-				// Форматируем колонки с датами (дополнительная страховка)
-				const dateColumnIndices = this.mapper.findDateColumnIndices(finalColumns);
-				if (dateColumnIndices.length > 0) {
-					await this.sheetService.formatDateColumns(dateColumnIndices);
-				}
+			// Форматируем колонки с датами
+			const dateColumnIndices = this.mapper.findDateColumnIndices(finalColumns);
+			if (dateColumnIndices.length > 0) {
+				await this.sheetService.formatDateColumns(dateColumnIndices);
 			}
 		}
 
 		const stats: WriteStats = {
-			totalRecords: currentDataRows + newRecords.length,
+			totalRecords: filteredRecords.length + newRecords.length,
 			newRecords: newRecords.length,
-			updatedRecords: 0,
+			updatedRecords: 0, // В данном подходе мы удаляем старые и добавляем новые
 			deletedRecords: deletedCount,
 			newColumns
 		};
