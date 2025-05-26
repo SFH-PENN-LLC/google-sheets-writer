@@ -1,7 +1,6 @@
 /**
  * Маппер для преобразования JSON данных в строки Google Sheets
- * Обрабатывает типы данных, даты, вложенные объекты
- * ИСПРАВЛЕНО: правильная обработка дат для Google Sheets
+ * ИСПРАВЛЕНО: полагается на предобработку данных, всегда ищет поле "date"
  */
 
 export interface ProcessedRecord {
@@ -12,12 +11,13 @@ export interface ProcessedRecord {
 export class RecordMapper {
 	private dateFields: string[];
 
-	constructor(customDateFields?: string[]) {
-		// Позволяем настраивать поля дат через переменную окружения или конструктор
-		const envDateFields = process.env.DATE_FIELDS?.split(',').map(f => f.trim());
-		this.dateFields = customDateFields || envDateFields || ['date', 'date_start', 'day', 'date_stop'];
+	constructor() {
+		// ИСПРАВЛЕНО: полагаемся на предобработку данных
+		// DateStandardizer уже унифицировал все поля дат в "date"
+		this.dateFields = ['date'];
 
 		console.log(`📅 Using date fields: ${this.dateFields.join(', ')}`);
+		console.log(`🔧 Relying on data preprocessing (DateStandardizer) for date field standardization`);
 	}
 
 	/**
@@ -63,7 +63,6 @@ export class RecordMapper {
 
 	/**
 	 * Обрабатывает значение поля с учетом его типа
-	 * ИСПРАВЛЕНО: возвращает чистые строки YYYY-MM-DD для дат
 	 */
 	private processFieldValue(value: any, columnName: string): any {
 		if (value == null || value === '') {
@@ -73,7 +72,7 @@ export class RecordMapper {
 		// Специальная обработка дат - возвращаем строку YYYY-MM-DD
 		if (this.isDateField(columnName)) {
 			const normalized = this.normalizeDate(String(value));
-			return normalized || String(value); // Если нормализация не удалась, возвращаем исходное значение
+			return normalized || String(value);
 		}
 
 		// Обработка вложенных объектов и массивов
@@ -81,7 +80,7 @@ export class RecordMapper {
 			return JSON.stringify(value);
 		}
 
-		// Обработка чисел - оставляем как числа
+		// Обработка чисел
 		if (typeof value === 'number') {
 			return value;
 		}
@@ -102,17 +101,13 @@ export class RecordMapper {
 		return this.dateFields.includes(columnName.toLowerCase());
 	}
 
-
-
 	/**
 	 * Нормализует дату в формат YYYY-MM-DD
-	 * УЛУЧШЕНО: более точная обработка различных форматов дат
 	 */
 	normalizeDate(dateString: string): string {
 		if (!dateString) return '';
 
 		try {
-			// Убираем лишние пробелы
 			const cleaned = dateString.trim();
 
 			// Если уже в формате YYYY-MM-DD, проверяем валидность
@@ -129,7 +124,7 @@ export class RecordMapper {
 				return '';
 			}
 
-			// Форматируем в YYYY-MM-DD без UTC сдвигов
+			// Форматируем в YYYY-MM-DD
 			const year = date.getFullYear();
 			const month = String(date.getMonth() + 1).padStart(2, '0');
 			const day = String(date.getDate()).padStart(2, '0');
@@ -141,11 +136,14 @@ export class RecordMapper {
 	}
 
 	/**
-	 * Извлекает даты из записей (с проверкой на наличие дат)
+	 * Извлекает даты из записей
+	 * ИСПРАВЛЕНО: упрощенная логика, полагается на предобработку
 	 */
 	extractDatesFromRecords(records: Record<string, any>[]): string[] {
 		const dates = new Set<string>();
 		let foundDateFields = false;
+
+		console.log(`🔍 Looking for date field: "date" (standardized by preprocessing)`);
 
 		for (const record of records) {
 			const date = this.getRecordDate(record);
@@ -154,27 +152,32 @@ export class RecordMapper {
 				const normalizedDate = this.normalizeDate(date);
 				if (normalizedDate) {
 					dates.add(normalizedDate);
+					console.log(`📅 Found date: ${date} -> ${normalizedDate}`);
 				}
 			}
 		}
 
 		if (!foundDateFields && records.length > 0) {
-			console.warn(`⚠️  No date fields found in records. Available fields: ${Object.keys(records[0]).join(', ')}`);
-			console.warn(`⚠️  Expected date fields: ${this.dateFields.join(', ')}`);
-			console.warn(`⚠️  Incremental mode will append all new data without cleanup`);
+			console.error(`❌ CRITICAL: No "date" field found in records!`);
+			console.error(`   Available fields: ${Object.keys(records[0]).join(', ')}`);
+			console.error(`   Expected field: "date"`);
+			console.error(`   🔧 Check data preprocessing (DateStandardizer) - it should create "date" field`);
+			console.error(`   ⚠️  Incremental mode will append all new data without cleanup`);
+		} else if (foundDateFields) {
+			console.log(`✅ Found ${dates.size} unique dates: ${Array.from(dates).join(', ')}`);
 		}
 
 		return Array.from(dates).sort();
 	}
 
 	/**
-	 * Получает дату из записи (ищет в стандартных полях)
+	 * Получает дату из записи
+	 * ИСПРАВЛЕНО: ищет только поле "date"
 	 */
 	getRecordDate(record: Record<string, any>): string {
-		for (const field of this.dateFields) {
-			if (record[field]) {
-				return String(record[field]);
-			}
+		// Полагаемся на предобработку - ищем только "date"
+		if (record.date) {
+			return String(record.date);
 		}
 
 		return '';
@@ -199,7 +202,7 @@ export class RecordMapper {
 			headers.forEach((header, index) => {
 				let cellValue = row[index] || '';
 
-				// ИСПРАВЛЕНО: удаляем апострофы из дат при чтении
+				// Удаляем апострофы из дат при чтении
 				if (typeof cellValue === 'string' && cellValue.startsWith("'")) {
 					cellValue = cellValue.substring(1);
 				}
@@ -237,7 +240,7 @@ export class RecordMapper {
 	groupConsecutiveRanges(numbers: number[]): Array<{start: number, end: number}> {
 		if (numbers.length === 0) return [];
 
-		const sorted = [...numbers].sort((a, b) => b - a); // Удаляем с конца
+		const sorted = [...numbers].sort((a, b) => b - a);
 		const ranges: Array<{start: number, end: number}> = [];
 
 		let start = sorted[0];
@@ -245,19 +248,51 @@ export class RecordMapper {
 
 		for (let i = 1; i < sorted.length; i++) {
 			if (sorted[i] === end - 1) {
-				// Продолжаем диапазон
 				end = sorted[i];
 			} else {
-				// Заканчиваем текущий диапазон
 				ranges.push({ start: end, end: start });
 				start = sorted[i];
 				end = sorted[i];
 			}
 		}
 
-		// Добавляем последний диапазон
 		ranges.push({ start: end, end: start });
 
 		return ranges;
+	}
+
+	/**
+	 * Диагностический метод для проверки данных
+	 */
+	validatePreprocessing(records: Record<string, any>[]): boolean {
+		if (records.length === 0) {
+			console.warn('⚠️  No records to validate');
+			return true;
+		}
+
+		const firstRecord = records[0];
+		const hasDateField = firstRecord.hasOwnProperty('date');
+
+		console.log('\n🔍 PREPROCESSING VALIDATION:');
+		console.log(`   Records count: ${records.length}`);
+		console.log(`   Has "date" field: ${hasDateField ? '✅ YES' : '❌ NO'}`);
+
+		if (hasDateField) {
+			console.log(`   Sample date value: "${firstRecord.date}"`);
+		} else {
+			console.log(`   Available fields: ${Object.keys(firstRecord).join(', ')}`);
+			console.error('❌ DateStandardizer failed to create "date" field!');
+			return false;
+		}
+
+		// Проверяем все записи
+		const recordsWithoutDate = records.filter(r => !r.date);
+		if (recordsWithoutDate.length > 0) {
+			console.error(`❌ ${recordsWithoutDate.length} records missing "date" field`);
+			return false;
+		}
+
+		console.log('✅ All records have "date" field - preprocessing worked correctly');
+		return true;
 	}
 }
