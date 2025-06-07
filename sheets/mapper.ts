@@ -65,7 +65,12 @@ export class RecordMapper {
 	 * Обрабатывает значение поля с учетом его типа
 	 */
 	private processFieldValue(value: any, columnName: string): any {
-		if (value == null || value === '') {
+		if (
+			value == null ||
+			value === '' ||
+			value === '-' ||
+			value === '--'
+		) {
 			return '';
 		}
 
